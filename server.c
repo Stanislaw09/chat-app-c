@@ -14,7 +14,8 @@
 
 #define OK 10
 #define USER_EXISTS 11
-#define NO_SUCH_SERVER 12
+#define NO_SUCH_ROOM 12
+#define ROOM_EXISTS 13
 
 typedef struct
 {
@@ -24,7 +25,123 @@ typedef struct
    char client[256];
 } msbuf;
 
-char clients[5][256], servers_names[10][256], clients_in_servers[10][5][256];
+char clients[5][256], rooms_names[10][256], clients_in_rooms[10][5][256];
+
+void join_client(int to_client, msbuf getMsg)
+{
+   for (int index = 0; index < 5; index++)
+   {
+      if (strcmp(getMsg.client, clients[index]) == 0)
+      {
+         //send error - such name already exists
+         msbuf sendMsg;
+         strcpy(sendMsg.client, getMsg.client);
+         sendMsg.type = USER_EXISTS;
+
+         msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+         break;
+      }
+      else if (index == 4)
+      {
+         for (int j = 0; j < 5; j++)
+         {
+            if (strcmp(clients[j], "") == 0)
+            {
+               //add client and send ok
+               strcpy(clients[j], getMsg.client);
+
+               msbuf sendMsg;
+               strcpy(sendMsg.client, getMsg.client);
+               sendMsg.type = OK;
+               msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+               break;
+            }
+         }
+      }
+   }
+}
+
+void join_room(int to_client, msbuf getMsg)
+{
+   for (int index = 0; index < 10; index++)
+   {
+      if (strcmp(getMsg.option, rooms_names[index]) == 0)
+      {
+         int user_found = 0;
+
+         for (int j = 0; j < 5; j++)
+            if (strcmp(clients_in_rooms[index][j], getMsg.client) == 0)
+               user_found = 1;
+
+         if (user_found)
+         {
+            //user already in room
+            msbuf sendMsg;
+            strcpy(sendMsg.client, getMsg.client);
+            sendMsg.type = OK;
+            msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+            break;
+         }
+         else
+         {
+            //add user to room
+            for (int j = 0; j < 5; j++)
+               if (strcmp(clients_in_rooms[index][j], "") == 0)
+               {
+                  strcpy(clients_in_rooms[index][j], getMsg.client);
+
+                  msbuf sendMsg;
+                  strcpy(sendMsg.client, getMsg.client);
+                  sendMsg.type = OK;
+                  msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+                  break;
+               }
+         }
+      }
+      else if (index == 9)
+      {
+         //no such server
+         msbuf sendMsg;
+         strcpy(sendMsg.client, getMsg.client);
+         sendMsg.type = NO_SUCH_ROOM;
+         msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+         break;
+      }
+   }
+}
+
+void create_room(int to_client, msbuf getMsg)
+{
+   for (int i = 0; i < 10; i++)
+   {
+      //check if the room exists
+      if (strcmp(rooms_names[i], getMsg.option) == 0)
+      {
+         msbuf sendMsg;
+         sendMsg.type = ROOM_EXISTS;
+         strcpy(sendMsg.client, getMsg.client);
+         msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+         break;
+      }
+      else if (i == 9)
+      {
+         for (int j = 0; j < 10; j++)
+         {
+            //create new room
+            if (strcmp(rooms_names[j], "") == 0)
+            {
+               strcpy(rooms_names[j], getMsg.option);
+
+               msbuf sendMsg;
+               sendMsg.type = OK;
+               strcpy(sendMsg.client, getMsg.client);
+               msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+               break;
+            }
+         }
+      }
+   }
+}
 
 int main(int argc, char *argv[])
 {
@@ -40,92 +157,32 @@ int main(int argc, char *argv[])
 
       while (msgrcv(from_client, &getMsg, sizeof(msbuf) - sizeof(long), -9, 0) != -1)
       {
-         printf("RCV: %ld , %s , %s , %s\n", getMsg.type, getMsg.message, getMsg.option, getMsg.client);
+         printf("Received: %ld , %s , %s , %s\n\n", getMsg.type, getMsg.message, getMsg.option, getMsg.client);
 
          if (getMsg.type == JOIN)
          {
-            printf("join new client\n");
+            join_client(to_client, getMsg);
 
-            for (int index = 0; index < 5; index++)
-            {
-               if (strcmp(getMsg.client, clients[index]) == 0)
-               {
-                  //send error - such name already exists
-                  printf("user exists\n");
-                  msbuf sendMsg;
-                  strcpy(sendMsg.client, getMsg.client);
-                  sendMsg.type = USER_EXISTS;
-
-                  msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-                  break;
-               }
-               if (strcmp(clients[index], "") == 0)
-               { //CAN BREAK!!!!!!!!!!!!!!!!!!!!
-                  //add client and send ok
-                  printf("add user\n");
-                  strcpy(clients[index], getMsg.client);
-
-                  msbuf sendMsg;
-                  strcpy(sendMsg.client, getMsg.client);
-                  sendMsg.type = OK;
-                  int x = msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-                  printf("status %d", x);
-                  break;
-               }
-            }
+            printf("Users:\n");
+            for (int i = 0; i < 10; i++)
+               if (strcmp(clients[i], ""))
+                  printf("  %s\n", clients[i]);
          }
 
          if (getMsg.type == JOIN_ROOM)
+            join_room(to_client, getMsg);
+
+         if (getMsg.type == CREATE_ROOM)
          {
-            for (int index = 0; index < 10; index++)
-            {
-               if (strcmp(getMsg.option, servers_names[index]) == 0)
-               {
-                  printf("server found\n");
-                  int user_found = 0;
+            create_room(to_client, getMsg);
 
-                  for (int j = 0; j < 5; j++)
-                     if (strcmp(clients_in_servers[index][j], getMsg.client) == 0)
-                        user_found = 1;
-
-                  if (user_found)
-                  {
-                     //user already in room
-                     msbuf sendMsg;
-                     strcpy(sendMsg.client, getMsg.client);
-                     sendMsg.type = OK;
-                     msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-                     break;
-                  }
-                  else
-                  {
-                     //add user to room
-                     for (int j = 0; j < 5; j++)
-                        if (strcmp(clients_in_servers[index][j], "") == 0)
-                        {
-                           strcpy(clients_in_servers[index][j], getMsg.client);
-
-                           msbuf sendMsg;
-                           strcpy(sendMsg.client, getMsg.client);
-                           sendMsg.type = OK;
-                           msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-                           break;
-                        }
-                  }
-               }
-               else if (index == 9)
-               {
-                  //no such server
-                  msbuf sendMsg;
-                  strcpy(sendMsg.client, getMsg.client);
-                  sendMsg.type = NO_SUCH_SERVER;
-                  msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-                  break;
-               }
-            }
+            printf("Rooms:\n");
+            for (int i = 0; i < 10; i++)
+               if (strcmp(rooms_names[i], ""))
+                  printf("  %s\n", rooms_names[i]);
          }
 
-         printf("finish receiving\n");
+         printf("\n\n--------------------------------------------\n\n");
       }
    }
 
