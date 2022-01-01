@@ -7,17 +7,21 @@
 #include <unistd.h>
 #include <wait.h>
 
+//messages from client
 #define JOIN 1
 #define JOIN_ROOM 2
 #define CREATE_ROOM 3
-#define MESSAGE_TO_SERVER 4
-
+#define MESSAGE_TO_ROOM 4
+#define MESSAGE_TO_CLIENT 5
+//messages from server
 #define OK 10
 #define USER_EXISTS 11
 #define NO_SUCH_ROOM 12
 #define ROOM_EXISTS 13
-#define MESSAGE_TO_CLIENT 14
-#define WRONG_RECIPIENT 15
+#define WRONG_RECIPIENT 14
+//types of messages
+#define MESSAGE_FROM_CLIENT 20
+#define MESSAGE_FROM_ROOM 21
 
 typedef struct
 {
@@ -28,6 +32,8 @@ typedef struct
 } msbuf;
 
 char clients[5][256], rooms_names[10][256], clients_in_rooms[10][5][256];
+// assumes that clients_in_rooms are the rooms as in rooms_names with corresponding indexes
+// it doesnt assume possibility of removing room / didnt mentions in requirements
 
 void join_client(int to_client, msbuf getMsg)
 {
@@ -42,13 +48,11 @@ void join_client(int to_client, msbuf getMsg)
          sendMsg.type = USER_EXISTS;
 
          msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-         printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
          break;
       }
       else if (index == 4)
       {
          for (int j = 0; j < 5; j++)
-         {
             if (strcmp(clients[j], "") == 0)
             {
                //add client and send ok
@@ -59,10 +63,8 @@ void join_client(int to_client, msbuf getMsg)
                strcpy(sendMsg.client, getMsg.client);
                sendMsg.type = OK;
                msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-               printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
                break;
             }
-         }
       }
    }
 }
@@ -87,7 +89,6 @@ void join_room(int to_client, msbuf getMsg)
             strcpy(sendMsg.client, getMsg.client);
             sendMsg.type = OK;
             msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-            printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
             break;
          }
          else
@@ -103,7 +104,6 @@ void join_room(int to_client, msbuf getMsg)
                   strcpy(sendMsg.client, getMsg.client);
                   sendMsg.type = OK;
                   msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-                  printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
                   user_added = 1;
                   break;
                }
@@ -117,7 +117,6 @@ void join_room(int to_client, msbuf getMsg)
          strcpy(sendMsg.client, getMsg.client);
          sendMsg.type = NO_SUCH_ROOM;
          msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-         printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
          break;
       }
    }
@@ -135,11 +134,9 @@ void create_room(int to_client, msbuf getMsg)
          sendMsg.type = ROOM_EXISTS;
          strcpy(sendMsg.client, getMsg.client);
          msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-         printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
          break;
       }
       else if (i == 9)
-      {
          for (int j = 0; j < 10; j++)
          {
             //create new room
@@ -152,66 +149,80 @@ void create_room(int to_client, msbuf getMsg)
                sendMsg.type = OK;
                strcpy(sendMsg.client, getMsg.client);
                msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-               printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
                break;
             }
          }
-      }
    }
 }
 
-// assumes that there is not user and room with the same name
-void dispatch_message(int to_client, msbuf getMsg)
+void dispatch_private_message(int to_client, msbuf getMsg)
 {
    int send_flag = 0;
 
    for (int i = 0; i < 5; i++)
       if (strcmp(getMsg.option, clients[i]) == 0)
       {
-         //send message to user
+         //need to check if they are in the same room
          printf("send message to client\n");
          msbuf sendMsg;
-         sendMsg.type = MESSAGE_TO_CLIENT;
+         sendMsg.type = MESSAGE_FROM_CLIENT;
          strcpy(sendMsg.message, getMsg.message);
-         strcpy(sendMsg.client, clients[i]);
+         strcpy(sendMsg.client, getMsg.client);
          msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-         printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
          send_flag = 1;
          break;
       }
 
+   //send feedback
+   if (send_flag)
+   {
+      msbuf sendMsg;
+      sendMsg.type = OK;
+      msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+   }
+   else
+   {
+      msbuf sendMsg;
+      sendMsg.type = WRONG_RECIPIENT;
+      msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+   }
+}
+
+void dispatch_room_message(int to_client, msbuf getMsg)
+{
+   int send_flag = 0;
+
    for (int index = 0; index < 10; index++)
       if (strcmp(getMsg.option, rooms_names[index]) == 0)
       {
-         //send message to all users in room
-         printf("send message to room\n");
          for (int j = 0; j < 5; j++)
             if (strcmp(clients_in_rooms[index][j], ""))
             {
-               //send message to user
+               printf("send message to room\n");
                msbuf sendMsg;
-               sendMsg.type = MESSAGE_TO_CLIENT;
+               sendMsg.type = MESSAGE_FROM_ROOM;
                strcpy(sendMsg.message, getMsg.message);
-               strcpy(sendMsg.client, clients_in_rooms[index][j]);
-               printf("%ld %s\n", sendMsg.type, sendMsg.client);
+               strcpy(sendMsg.client, getMsg.client);
+               strcpy(sendMsg.option, rooms_names[index]);
                msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-               printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
                send_flag = 1;
             }
 
          break;
       }
 
-   if (!send_flag)
+   //send feedback
+   if (send_flag)
    {
-      printf("cannot send\n");
       msbuf sendMsg;
-      sendMsg.type = WRONG_RECIPIENT;
-      strcpy(sendMsg.message, "");
-      strcpy(sendMsg.client, getMsg.client);
-      printf("%ld %s\n", sendMsg.type, sendMsg.client);
+      sendMsg.type = OK;
       msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-      printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
+   }
+   else
+   {
+      msbuf sendMsg;
+      sendMsg.type = WRONG_RECIPIENT; //or room is empty
+      msgsnd(to_client, &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
    }
 }
 
@@ -240,30 +251,22 @@ int main(int argc, char *argv[])
                if (strcmp(clients[i], ""))
                   printf("  %s\n", clients[i]);
          }
-
-         if (getMsg.type == JOIN_ROOM)
+         else if (getMsg.type == JOIN_ROOM)
          {
             join_room(to_client, getMsg);
 
             printf("Clients in rooms:\n");
             for (int i = 0; i < 10; i++)
-            {
                if (strcmp(rooms_names[i], ""))
                {
                   printf("  %s\n", rooms_names[i]);
 
                   for (int j = 0; j < 5; j++)
-                  {
                      if (strcmp(clients_in_rooms[i][j], ""))
-                     {
                         printf("    %s\n", clients_in_rooms[i][j]);
-                     }
-                  }
                }
-            }
          }
-
-         if (getMsg.type == CREATE_ROOM)
+         else if (getMsg.type == CREATE_ROOM)
          {
             create_room(to_client, getMsg);
 
@@ -272,31 +275,12 @@ int main(int argc, char *argv[])
                if (strcmp(rooms_names[i], ""))
                   printf("  %s\n", rooms_names[i]);
          }
-
-         if (getMsg.type == MESSAGE_TO_SERVER)
-         {
-            dispatch_message(to_client, getMsg);
-         }
+         else if (getMsg.type == MESSAGE_TO_ROOM)
+            dispatch_room_message(to_client, getMsg);
+         else if (getMsg.type == MESSAGE_TO_CLIENT)
+            dispatch_private_message(to_client, getMsg);
 
          printf("\n\n--------------------------------------------\n\n");
       }
    }
-
-   // if (fork() == 0)
-   // {
-   //    while (1)
-   //       if (read(0, msg.str, 1024) > 0)
-   //       {
-   //          msg.msgtype = M_SRV;
-   //          printf("SND | %s\n", msg.str);
-   //          msgsnd(to_client, &msg, sizeof(msbuf) - sizeof(long)- sizeof(long), - sizeof(long) 0);
-   //       }
-   // }
-   // else
-   // {
-   //    close(0);
-   //    while (1)
-   //       while (msgrcv(id, &msg, sizeof(msbuf) - sizeof(long)- sizeof(long), - sizeof(long) -3, 0) != -1)
-   //          printf("RCV | %s\n", msg.str);
-   // }
 }
