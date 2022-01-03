@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <wait.h>
+#include <fcntl.h>
+#include <signal.h>
 
 //messages from client
 #define JOIN 1
@@ -23,6 +25,8 @@
 #define MESSAGE_FROM_CLIENT 20
 #define MESSAGE_FROM_ROOM 21
 
+#define PROJ_ID 2137
+
 typedef struct
 {
    long type;
@@ -32,23 +36,46 @@ typedef struct
 } msbuf;
 
 char server_name[256], client_name[256];
+int server_queue, client_queue;
 
-int join_server(int to_server, int from_server)
+void clean_ftok_temp_shit(int n){
+   system("rm -rf ./ftok_temp_shit");
+   exit(1);
+}
+
+key_t get_id_from_string(char string[]){
+   // all the fuckery below is needed to get ftok working for this use case ¯\_(ツ)_/¯
+   signal(SIGINT, clean_ftok_temp_shit);
+   char cmd[1024] = "mkdir -p ";
+   char path[1024] = "./ftok_temp_shit/";
+   strcat(cmd, path);
+   system(cmd);
+   strcat(path, string);
+   strcpy(cmd, "touch ");
+   strcat(cmd, path);
+   system(cmd);
+   return ftok(path, PROJ_ID);
+}
+
+int join_server()
 {
    printf("enter server's name: ");
-   scanf("%s", server_name); //for now it does nothing xd
+   scanf("%s", server_name);
    printf("\nenter client name: ");
    scanf("%s", client_name);
+
+   server_queue = msgget(get_id_from_string(server_name), 0777 | IPC_CREAT);
+   client_queue = msgget(get_id_from_string(client_name), 0777 | IPC_CREAT);
 
    msbuf sendMsg;
    sendMsg.type = JOIN;
    strcpy(sendMsg.message, "");
    strcpy(sendMsg.option, "");
    strcpy(sendMsg.client, client_name);
-   msgsnd(to_server, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
+   msgsnd(server_queue, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
 
    msbuf getMsg;
-   msgrcv(from_server, &getMsg, sizeof(msbuf) - sizeof(long), -19, 0);
+   msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), -19, 0);
    printf("\nRCV: %ld\n", getMsg.type);
 
    if (getMsg.type == OK)
@@ -68,7 +95,7 @@ int join_server(int to_server, int from_server)
    }
 }
 
-int join_room(int to_server, int from_server)
+int join_room(int server_queue, int client_queue)
 {
    char room_name[256];
    printf("\nenter room name: ");
@@ -79,10 +106,10 @@ int join_room(int to_server, int from_server)
    strcpy(sendMsg.message, "");
    strcpy(sendMsg.client, client_name);
    strcpy(sendMsg.option, room_name);
-   msgsnd(to_server, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
+   msgsnd(server_queue, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
 
    msbuf getMsg;
-   msgrcv(from_server, &getMsg, sizeof(msbuf) - sizeof(long), -19, 0);
+   msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), -19, 0);
    printf("\nRCV: %ld\n", getMsg.type);
 
    if (getMsg.type == OK)
@@ -102,7 +129,7 @@ int join_room(int to_server, int from_server)
    }
 }
 
-int create_room(int to_server, int from_server)
+int create_room(int server_queue, int client_queue)
 {
    char room_name[256];
    printf("\nenter room name to create: ");
@@ -113,10 +140,10 @@ int create_room(int to_server, int from_server)
    strcpy(sendMsg.message, "");
    strcpy(sendMsg.client, client_name);
    strcpy(sendMsg.option, room_name);
-   msgsnd(to_server, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
+   msgsnd(server_queue, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
 
    msbuf getMsg;
-   msgrcv(from_server, &getMsg, sizeof(msbuf) - sizeof(long), -19, 0);
+   msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), -19, 0);
    printf("\nRCV: %ld\n", getMsg.type);
 
    if (getMsg.type == OK)
@@ -136,7 +163,7 @@ int create_room(int to_server, int from_server)
    }
 }
 
-void send_message(int to_server, int from_server)
+void send_message(int server_queue, int client_queue)
 {
    int recipient_type;
    char recipient_name[256], message[1024];
@@ -160,10 +187,10 @@ void send_message(int to_server, int from_server)
    strcpy(sendMsg.option, recipient_name);
    strcpy(sendMsg.message, message);
    strcpy(sendMsg.client, client_name);
-   msgsnd(to_server, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
+   msgsnd(server_queue, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
 
    msbuf getMsg;
-   msgrcv(from_server, &getMsg, sizeof(msbuf) - sizeof(long), -19, 0);
+   msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), -19, 0);
 
    if (getMsg.type == OK)
       printf("\nOK\n");
@@ -173,11 +200,11 @@ void send_message(int to_server, int from_server)
       printf("\nSth has fucked up...  ╯︿╰\n");
 }
 
-void display_private_messages(int from_server)
+void display_private_messages(int client_queue)
 {
    msbuf getMsg;
 
-   while (msgrcv(from_server, &getMsg, sizeof(msbuf) - sizeof(long), MESSAGE_FROM_CLIENT, IPC_NOWAIT) != -1)
+   while (msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), MESSAGE_FROM_CLIENT, IPC_NOWAIT) != -1)
    {
       printf("\ngot something for ya  ( ͡° ͜ʖ ͡°)\n");
       printf("  \"%s\"  from  %s\n", getMsg.message, getMsg.client);
@@ -185,12 +212,12 @@ void display_private_messages(int from_server)
    }
 }
 
-void display_room_chat(int from_server)
+void display_room_chat(int client_queue)
 {
    //need additional info about room
    msbuf getMsg;
 
-   while (msgrcv(from_server, &getMsg, sizeof(msbuf) - sizeof(long), MESSAGE_FROM_ROOM, IPC_NOWAIT) != -1)
+   while (msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), MESSAGE_FROM_ROOM, IPC_NOWAIT) != -1)
    {
       printf("\ngot something for ya  ( ͡° ͜ʖ ͡°)\n");
       printf("  \"%s\"  from  %s  in room: %s\n", getMsg.message, getMsg.client, getMsg.option);
@@ -200,20 +227,14 @@ void display_room_chat(int from_server)
 
 int main(int argc, char *argv[])
 {
-   key_t key_to_server = 2137;
-   key_t key_from_server = 2138;
-
-   int to_server = msgget(key_to_server, 0777 | IPC_CREAT);
-   int from_server = msgget(key_from_server, 0777 | IPC_CREAT);
-
    //----------------- join server -------------------------
 
    int joined = 0;
    while (joined == 0)
-      joined = join_server(to_server, from_server);
+      joined = join_server(server_queue, client_queue);
 
-   //wait for ENTER
-   getchar();
+   // //wait for ENTER
+   // getchar();
    char ch = fgetc(stdin);
    while (ch != 0x0A)
       ch = fgetc(stdin);
@@ -236,9 +257,9 @@ int main(int argc, char *argv[])
       if (choice == 1)
          printf("Available rooms:...\n");
       else if (choice == 2)
-         joined = join_room(to_server, from_server);
+         joined = join_room(server_queue, client_queue);
       else if (choice == 3)
-         create_room(to_server, from_server);
+         create_room(server_queue, client_queue);
 
       getchar();
       char ch = fgetc(stdin);
@@ -267,25 +288,25 @@ int main(int argc, char *argv[])
       if (choice == 0)
          printf("Available rooms:...\n");
       else if (choice == 1)
-         join_room(to_server, from_server);
+         join_room(server_queue, client_queue);
       else if (choice == 2)
-         create_room(to_server, from_server);
+         create_room(server_queue, client_queue);
       else if (choice == 3)
          printf("Witdraw from room\n");
       else if (choice == 4)
-         send_message(to_server, from_server);
+         send_message(server_queue, client_queue);
       else if (choice == 5)
-         display_private_messages(from_server);
+         display_private_messages(client_queue);
       else if (choice == 6)
-         display_room_chat(from_server);
+         display_room_chat(client_queue);
       else if (choice == 7)
          printf("Displat clients in server\n");
       else if (choice == 8)
          printf("Display clients in rooms\n");
       else if (choice == 9)
       {
-         msgctl(from_server, IPC_RMID, NULL);
-         msgctl(to_server, IPC_RMID, NULL);
+         msgctl(client_queue, IPC_RMID, NULL);
+         msgctl(server_queue, IPC_RMID, NULL);
          exit(0);
       }
 
