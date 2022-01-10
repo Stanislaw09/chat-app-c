@@ -15,12 +15,15 @@
 #define CREATE_ROOM 3
 #define MESSAGE_TO_ROOM 4
 #define MESSAGE_TO_CLIENT 5
+
+#define DISPLAY_CLIENTS_IN_ROOMS 7
 //messages from server
 #define OK 10
 #define USER_EXISTS 11
 #define NO_SUCH_ROOM 12
 #define ROOM_EXISTS 13
 #define WRONG_RECIPIENT 14
+#define CLIENTS_IN_ROOMS 16
 //types of messages
 #define MESSAGE_FROM_CLIENT 20
 #define MESSAGE_FROM_ROOM 21
@@ -275,6 +278,27 @@ void dispatch_room_message(msbuf getMsg)
    }
 }
 
+void get_clients_in_rooms(msbuf getMsg){
+   char out[1024];
+   for(int i = 0; i < 10; i++){
+      if(strcmp(rooms_names[i], "") != 0){
+         strcat(out, "> ");
+         strcat(out, rooms_names[i]);
+         strcat(out, "\n");
+         for(int j = 0; j<5;j++){
+            if(strcmp(rooms_client_names[i][j], "") != 0)
+               strcat(out, "  - ");
+               strcat(out, rooms_client_names[i][j]);
+               strcat(out, "\n");
+         }
+      }
+   }
+   msbuf sendMsg;
+   sendMsg.type = CLIENTS_IN_ROOMS;
+   strcpy(sendMsg.message, out);
+   msgsnd(get_client_queue(getMsg.client), &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+   
+}
 void handle_message(msbuf getMsg){
    printf("Received: %ld , %s , %s , %s\n\n", getMsg.type, getMsg.message, getMsg.option, getMsg.client);
    switch(getMsg.type){
@@ -311,6 +335,10 @@ void handle_message(msbuf getMsg){
       case MESSAGE_TO_CLIENT:
          dispatch_private_message(getMsg);
          break;
+      case DISPLAY_CLIENTS_IN_ROOMS:
+         get_clients_in_rooms(getMsg);
+         break;
+
    }
    printf("\n\n--------------------------------------------\n\n");
 }

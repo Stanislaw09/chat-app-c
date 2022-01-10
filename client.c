@@ -15,12 +15,16 @@
 #define CREATE_ROOM 3
 #define MESSAGE_TO_ROOM 4
 #define MESSAGE_TO_CLIENT 5
+
+#define DISPLAY_CLIENTS_IN_ROOMS 7
 //messages from server
 #define OK 10
 #define USER_EXISTS 11
 #define NO_SUCH_ROOM 12
 #define ROOM_EXISTS 13
 #define WRONG_RECIPIENT 14
+
+#define CLIENTS_IN_ROOMS 16
 //types of messages
 #define MESSAGE_FROM_CLIENT 20
 #define MESSAGE_FROM_ROOM 21
@@ -225,6 +229,18 @@ void display_room_chat(int client_queue)
    }
 }
 
+void display_clients_in_rooms() {
+   msbuf sendMsg;
+   sendMsg.type = DISPLAY_CLIENTS_IN_ROOMS;
+   strcpy(sendMsg.client, client_name);
+   msgsnd(server_queue, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
+
+   msbuf getMsg;
+   msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), CLIENTS_IN_ROOMS, 0);
+   printf("\nDisplaying client in rooms: \n");
+   printf("%s\n", getMsg.message);
+
+}
 int main(int argc, char *argv[])
 {
    //----------------- join server -------------------------
@@ -302,7 +318,7 @@ int main(int argc, char *argv[])
       else if (choice == 7)
          printf("Displat clients in server\n");
       else if (choice == 8)
-         printf("Display clients in rooms\n");
+         display_clients_in_rooms(server_queue, client_queue);
       else if (choice == 9)
       {
          msgctl(client_queue, IPC_RMID, NULL);
