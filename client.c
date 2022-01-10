@@ -237,6 +237,8 @@ void display_clients_in_rooms() {
    sendMsg.type = DISPLAY_CLIENTS_IN_ROOMS;
    strcpy(sendMsg.client, client_name);
    msgsnd(server_queue, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
+
+   msbuf getMsg;
    msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), CLIENTS_IN_ROOMS, 0);
    printf("\nDisplaying client in rooms: \n");
    printf("%s\n", getMsg.message);
