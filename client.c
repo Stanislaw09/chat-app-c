@@ -323,9 +323,9 @@ int main(int argc, char *argv[])
       printf("\nExit                         9\n");
       scanf("%d", &choice);
 
-      if (choice == 0)
-         printf("Available rooms:...\n");
-      else if (choice == 1)
+      if (choice == 0){
+         display_available_rooms(server_queue, client_queue);
+      }else if (choice == 1)
          join_room(server_queue, client_queue);
       else if (choice == 2)
          create_room(server_queue, client_queue);
