@@ -15,6 +15,7 @@
 #define CREATE_ROOM 3
 #define MESSAGE_TO_ROOM 4
 #define MESSAGE_TO_CLIENT 5
+#define DISPLAY_ROOMS 6
 //messages from server
 #define OK 10
 #define USER_EXISTS 11
@@ -38,12 +39,14 @@ typedef struct
 char server_name[256], client_name[256];
 int server_queue, client_queue;
 
-void clean_ftok_temp_shit(int n){
+void clean_ftok_temp_shit(int n)
+{
    system("rm -rf ./ftok_temp_shit");
    exit(1);
 }
 
-key_t get_id_from_string(char string[]){
+key_t get_id_from_string(char string[])
+{
    // all the fuckery below is needed to get ftok working for this use case ¯\_(ツ)_/¯
    signal(SIGINT, clean_ftok_temp_shit);
    char cmd[1024] = "mkdir -p ";
@@ -225,6 +228,24 @@ void display_room_chat(int client_queue)
    }
 }
 
+void display_available_rooms(int server_queue, int client_queue)
+{
+   msbuf sendMsg;
+   sendMsg.type = DISPLAY_ROOMS;
+   strcpy(sendMsg.client, client_name);
+   msgsnd(server_queue, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
+
+   msbuf getMsg;
+   msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), -19, 0);
+   printf("\nRCV: %ld\n", getMsg.type);
+   printf("\navailable rooms: %s\n", getMsg.option);
+
+   if (getMsg.type == OK)
+      printf("\nOK\n");
+   else
+      printf("\nSth has fucked up...  ╯︿╰\n");
+}
+
 int main(int argc, char *argv[])
 {
    //----------------- join server -------------------------
@@ -255,7 +276,7 @@ int main(int argc, char *argv[])
       scanf("%d", &choice);
 
       if (choice == 1)
-         printf("Available rooms:...\n");
+         display_available_rooms(server_queue, client_queue);
       else if (choice == 2)
          joined = join_room(server_queue, client_queue);
       else if (choice == 3)

@@ -15,6 +15,7 @@
 #define CREATE_ROOM 3
 #define MESSAGE_TO_ROOM 4
 #define MESSAGE_TO_CLIENT 5
+#define DISPLAY_ROOMS 6
 //messages from server
 #define OK 10
 #define USER_EXISTS 11
@@ -40,12 +41,14 @@ int server_queue, client_queues[5], rooms_client_queues[10][5];
 // assumes that rooms_client_names are the rooms as in rooms_names with corresponding indexes
 // it doesnt assume possibility of removing room / didnt mentions in requirements
 
-void clean_ftok_temp_shit(int n){
+void clean_ftok_temp_shit(int n)
+{
    system("rm -rf ./ftok_temp_shit");
    exit(1);
 }
 
-key_t get_id_from_string(char string[]){
+key_t get_id_from_string(char string[])
+{
    // all the fuckery below is needed to get ftok working for this use case ¯\_(ツ)_/¯
    signal(SIGINT, clean_ftok_temp_shit);
    char cmd[1024] = "mkdir -p ";
@@ -59,19 +62,21 @@ key_t get_id_from_string(char string[]){
    return ftok(path, PROJ_ID);
 }
 
-int check_room(char client1[], char client2[]){
-   for(int room = 0; room < 10; room++)
-      for(int i = 0; i < 5; i++)
-         if(strcmp(rooms_client_names[room][i], client1) == 0)
-            for(int j = 0; j < 5; j++)
-               if(strcmp(rooms_client_names[room][j], client2) == 0)
+int check_room(char client1[], char client2[])
+{
+   for (int room = 0; room < 10; room++)
+      for (int i = 0; i < 5; i++)
+         if (strcmp(rooms_client_names[room][i], client1) == 0)
+            for (int j = 0; j < 5; j++)
+               if (strcmp(rooms_client_names[room][j], client2) == 0)
                   return 1;
    return 0;
 }
 
-int get_client_queue(char client[]){
-   for(int i = 0; i < 5; i++)
-      if(strcmp(client_names[i], client) == 0)
+int get_client_queue(char client[])
+{
+   for (int i = 0; i < 5; i++)
+      if (strcmp(client_names[i], client) == 0)
          return client_queues[i];
 }
 
@@ -206,7 +211,8 @@ void dispatch_private_message(msbuf getMsg)
    for (int i = 0; i < 5; i++)
       if (strcmp(getMsg.option, client_names[i]) == 0)
       {
-         if(check_room(getMsg.client, getMsg.option) == 0){
+         if (check_room(getMsg.client, getMsg.option) == 0)
+         {
             // not in the same room
             printf("Error / sender >%s< and recipient >%s< are not in the same room!\n", getMsg.client, getMsg.option);
             send_flag = 0;
@@ -275,42 +281,69 @@ void dispatch_room_message(msbuf getMsg)
    }
 }
 
-void handle_message(msbuf getMsg){
-   printf("Received: %ld , %s , %s , %s\n\n", getMsg.type, getMsg.message, getMsg.option, getMsg.client);
-   switch(getMsg.type){
-      case JOIN:
-         join_client(getMsg);
-         printf("Users:\n");
-         for (int i = 0; i < 10; i++)
-            if (strcmp(client_names[i], ""))
-               printf("  %s\n", client_names[i]);
-         break;
-      case JOIN_ROOM:
-         join_room(getMsg);
-         printf("client_names in rooms:\n");
-         for (int i = 0; i < 10; i++)
-            if (strcmp(rooms_names[i], ""))
-            {
-               printf("  %s\n", rooms_names[i]);
+void get_available_rooms(msbuf getMsg)
+{
+   char rooms[256];
 
-               for (int j = 0; j < 5; j++)
-                  if (strcmp(rooms_client_names[i][j], ""))
-                     printf("    %s\n", rooms_client_names[i][j]);
-            }
-         break;
-      case CREATE_ROOM:
-         create_room(getMsg);
-         printf("Rooms:\n");
-         for (int i = 0; i < 10; i++)
-            if (strcmp(rooms_names[i], ""))
-               printf("  %s\n", rooms_names[i]);
-         break;
-      case MESSAGE_TO_ROOM:
-         dispatch_room_message(getMsg);
-         break;
-      case MESSAGE_TO_CLIENT:
-         dispatch_private_message(getMsg);
-         break;
+   for (int i = 0; i < 10; i++)
+   {
+      if (strcmp(rooms_names[i], ""))
+      {
+         strcat(rooms, "\n");
+         strcat(rooms, rooms_names[i]);
+      }
+   }
+
+   msbuf sendMsg;
+   sendMsg.type = OK;
+   strcpy(sendMsg.client, getMsg.client);
+   strcpy(sendMsg.option, rooms);
+   msgsnd(get_client_queue(getMsg.client), &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+
+   printf("rooms: %s", rooms);
+}
+
+void handle_message(msbuf getMsg)
+{
+   printf("Received: %ld , %s , %s , %s\n\n", getMsg.type, getMsg.message, getMsg.option, getMsg.client);
+   switch (getMsg.type)
+   {
+   case JOIN:
+      join_client(getMsg);
+      printf("Users:\n");
+      for (int i = 0; i < 10; i++)
+         if (strcmp(client_names[i], ""))
+            printf("  %s\n", client_names[i]);
+      break;
+   case JOIN_ROOM:
+      join_room(getMsg);
+      printf("client_names in rooms:\n");
+      for (int i = 0; i < 10; i++)
+         if (strcmp(rooms_names[i], ""))
+         {
+            printf("  %s\n", rooms_names[i]);
+
+            for (int j = 0; j < 5; j++)
+               if (strcmp(rooms_client_names[i][j], ""))
+                  printf("    %s\n", rooms_client_names[i][j]);
+         }
+      break;
+   case CREATE_ROOM:
+      create_room(getMsg);
+      printf("Rooms:\n");
+      for (int i = 0; i < 10; i++)
+         if (strcmp(rooms_names[i], ""))
+            printf("  %s\n", rooms_names[i]);
+      break;
+   case MESSAGE_TO_ROOM:
+      dispatch_room_message(getMsg);
+      break;
+   case MESSAGE_TO_CLIENT:
+      dispatch_private_message(getMsg);
+      break;
+   case DISPLAY_ROOMS:
+      get_available_rooms(getMsg);
+      break;
    }
    printf("\n\n--------------------------------------------\n\n");
 }
