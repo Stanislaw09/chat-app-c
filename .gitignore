@@ -1,3 +1,4 @@
 client
 server
-ftok_temp_shit/
+temp/
+*.o

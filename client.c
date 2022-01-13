@@ -1,79 +1,16 @@
-#include <sys/types.h>
-#include <sys/ipc.h>
-#include <sys/msg.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <wait.h>
-#include <fcntl.h>
-#include <signal.h>
-
-//messages from client
-#define JOIN 1
-#define JOIN_ROOM 2
-#define CREATE_ROOM 3
-#define MESSAGE_TO_ROOM 4
-#define MESSAGE_TO_CLIENT 5
-
-#define DISPLAY_CLIENTS_IN_ROOMS 7
-#define DISPLAY_ROOMS 6
-//messages from server
-#define OK 10
-#define USER_EXISTS 11
-#define NO_SUCH_ROOM 12
-#define ROOM_EXISTS 13
-#define WRONG_RECIPIENT 14
-
-#define CLIENTS_IN_ROOMS 16
-//types of messages
-#define MESSAGE_FROM_CLIENT 20
-#define MESSAGE_FROM_ROOM 21
-
-#define PROJ_ID 2137
-
-typedef struct
-{
-   long type;
-   char message[1024];
-   char option[256];
-   char client[256];
-} msbuf;
+#include "./common.h"
 
 char server_name[256], client_name[256];
-int server_queue, client_queue;
+int client_queue, server_queue;
 
-void clean_ftok_temp_shit(int n)
+void clean(int n)
 {
-   system("rm -rf ./ftok_temp_shit");
-   exit(1);
-}
-
-key_t get_id_from_string(char string[])
-{
-   // all the fuckery below is needed to get ftok working for this use case ¯\_(ツ)_/¯
-   signal(SIGINT, clean_ftok_temp_shit);
-   char cmd[1024] = "mkdir -p ";
-   char path[1024] = "./ftok_temp_shit/";
-   strcat(cmd, path);
-   system(cmd);
-   strcat(path, string);
-   strcpy(cmd, "touch ");
-   strcat(cmd, path);
-   system(cmd);
-   return ftok(path, PROJ_ID);
+    msgctl(client_queue, IPC_RMID, NULL);
+    exit(1);
 }
 
 int join_server()
 {
-   printf("enter server's name: ");
-   scanf("%s", server_name);
-   printf("\nenter client name: ");
-   scanf("%s", client_name);
-
-   server_queue = msgget(get_id_from_string(server_name), 0777 | IPC_CREAT);
-   client_queue = msgget(get_id_from_string(client_name), 0777 | IPC_CREAT);
-
    msbuf sendMsg;
    sendMsg.type = JOIN;
    strcpy(sendMsg.message, "");
@@ -96,20 +33,12 @@ int join_server()
       return 0;
    }
    else
-   {
-      printf("\nSth has fucked up...  ╯︿╰\n");
-      return 0;
-   }
+      OOF;
 }
 
-int join_room(int server_queue, int client_queue)
-{
-   char room_name[256];
-   printf("\nenter room name: ");
-   scanf("%s", room_name);
-
+int room_command(int command, char* room_name) {
    msbuf sendMsg;
-   sendMsg.type = JOIN_ROOM;
+   sendMsg.type = command;
    strcpy(sendMsg.message, "");
    strcpy(sendMsg.client, client_name);
    strcpy(sendMsg.option, room_name);
@@ -121,6 +50,8 @@ int join_room(int server_queue, int client_queue)
 
    if (getMsg.type == OK)
    {
+      if(sendMsg.type == CREATE_ROOM)
+         room_command(JOIN_ROOM, room_name);
       printf("\nOK\n");
       return 1;
    }
@@ -129,62 +60,45 @@ int join_room(int server_queue, int client_queue)
       printf("\nno such room\n");
       return 0;
    }
-   else
-   {
-      printf("\nSth has fucked up...  ╯︿╰\n");
-      return 0;
-   }
-}
-
-int create_room(int server_queue, int client_queue)
-{
-   char room_name[256];
-   printf("\nenter room name to create: ");
-   scanf("%s", room_name);
-
-   msbuf sendMsg;
-   sendMsg.type = CREATE_ROOM;
-   strcpy(sendMsg.message, "");
-   strcpy(sendMsg.client, client_name);
-   strcpy(sendMsg.option, room_name);
-   msgsnd(server_queue, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
-
-   msbuf getMsg;
-   msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), -19, 0);
-   printf("\nRCV: %ld\n", getMsg.type);
-
-   if (getMsg.type == OK)
-   {
-      printf("\nOK\n");
-      return 1;
-   }
    else if (getMsg.type == ROOM_EXISTS)
    {
       printf("\nsuch room already exists\n");
       return 0;
    }
    else
-   {
-      printf("\nSth has fucked up...  ╯︿╰\n");
-      return 0;
-   }
+      OOF;
 }
 
-void send_message(int server_queue, int client_queue)
+int gui_room_command(int command)
+{
+   char room_name[256];
+   printf("\nroom name: ");
+   fflush(stdout);
+   scanf("%s", room_name);
+
+   room_command(command, room_name);
+}
+
+
+void send_message(char* message)
 {
    int recipient_type;
-   char recipient_name[256], message[1024];
+   char recipient_name[256];
 
-   printf("enter message: ");
-   getchar();
-   scanf("%1023[^\n]", message);
-
-   printf("\nchoose recipient 1-room  2-private \n");
-   scanf("%d", &recipient_type);
-
-   printf("\nenter recipient name \n");
+   // printf("enter message: ");
+   // getchar();
+   // scanf("%1023[^\n]", message);
+   system("stty raw");
+   printf("\nROOM (1) PRIVATE (2) ");
+   fflush(stdout);
+   recipient_type = fgetc(stdin) - '0';
+   if(recipient_type == 2)
+      printf(" | recipient: ");
+   else printf(" | room name: ");
+   fflush(stdout);
+   system("stty cooked");
    scanf("%s", recipient_name);
-
+   
    msbuf sendMsg;
    if (recipient_type == 1)
       sendMsg.type = MESSAGE_TO_ROOM;
@@ -200,39 +114,34 @@ void send_message(int server_queue, int client_queue)
    msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), -19, 0);
 
    if (getMsg.type == OK)
-      printf("\nOK\n");
+      printf("OK\n");
    else if (getMsg.type == WRONG_RECIPIENT)
-      printf("\nu 've chosen wrong recipient bro  (╯°□°)╯ ┻━┻\n");
+      printf("ERR wrong recipient!\n");
    else
-      printf("\nSth has fucked up...  ╯︿╰\n");
+      OOF;
 }
 
-void display_private_messages(int client_queue)
+void display_private_messages()
 {
    msbuf getMsg;
 
-   while (msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), MESSAGE_FROM_CLIENT, IPC_NOWAIT) != -1)
-   {
-      printf("\ngot something for ya  ( ͡° ͜ʖ ͡°)\n");
-      printf("  \"%s\"  from  %s\n", getMsg.message, getMsg.client);
-      getMsg.type = 0;
-   }
+   if (msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), MESSAGE_FROM_CLIENT, IPC_NOWAIT) != -1)
+      printf("\n%s: %s", getMsg.client, getMsg.message);
 }
 
-void display_room_chat(int client_queue)
+void display_room_chat()
 {
    //need additional info about room
    msbuf getMsg;
 
-   while (msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), MESSAGE_FROM_ROOM, IPC_NOWAIT) != -1)
-   {
-      printf("\ngot something for ya  ( ͡° ͜ʖ ͡°)\n");
-      printf("  \"%s\"  from  %s  in room: %s\n", getMsg.message, getMsg.client, getMsg.option);
-      getMsg.type = 0;
-   }
+   if (msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), MESSAGE_FROM_ROOM, IPC_NOWAIT) != -1)
+      if(strcmp(getMsg.client, client_name) != 0)
+         printf("\n[%s] %s: %s", getMsg.option, getMsg.client, getMsg.message);
+   
 }
 
-void display_clients_in_rooms() {
+void display_clients_in_rooms()
+{
    msbuf sendMsg;
    sendMsg.type = DISPLAY_CLIENTS_IN_ROOMS;
    strcpy(sendMsg.client, client_name);
@@ -240,12 +149,15 @@ void display_clients_in_rooms() {
 
    msbuf getMsg;
    msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), CLIENTS_IN_ROOMS, 0);
-   printf("\nDisplaying client in rooms: \n");
-   printf("%s\n", getMsg.message);
 
+   if (getMsg.type != CLIENTS_IN_ROOMS)
+      OOF;
+
+   printf("\nDisplaying clients in rooms: \n");
+   printf("%s\n", getMsg.message);
 }
 
-void display_available_rooms(int server_queue, int client_queue)
+void display_available_rooms()
 {
    msbuf sendMsg;
    sendMsg.type = DISPLAY_ROOMS;
@@ -253,23 +165,80 @@ void display_available_rooms(int server_queue, int client_queue)
    msgsnd(server_queue, &sendMsg, sizeof(msbuf) - sizeof(long), 0);
 
    msbuf getMsg;
-   msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), -19, 0);
-   printf("\nRCV: %ld\n", getMsg.type);
-   printf("\navailable rooms: %s\n", getMsg.option);
+   msgrcv(client_queue, &getMsg, sizeof(msbuf) - sizeof(long), ROOMS, 0);
 
-   if (getMsg.type == OK)
-      printf("\nOK\n");
-   else
-      printf("\nSth has fucked up...  ╯︿╰\n");
+   if (getMsg.type != ROOMS)
+      OOF;
+
+   printf("\nDisplaying available rooms: \n");
+   printf("%s\n", getMsg.message);
 }
 
+void menu() {
+   int choice;
+
+   printf("\n---------- MENU --------------");
+   printf("\nDisplay available rooms      0");
+   printf("\nJoin existing room           1");
+   printf("\nCreate the room              2");
+   printf("\nExit room                    3");
+   printf("\nSend message                 4");
+   printf("\nDisplay private messages     5");
+   printf("\nDisplay room chat            6");
+   printf("\nDisplay rooms and clients    7");
+   printf("\nDisplay recent room messages 8");
+   printf("\nExit                         9");
+   printf("\n------------------------------\n\n");
+   system("stty raw");
+   choice = fgetc(stdin) - '0';
+   system("stty cooked");
+   printf("\n");
+   if (choice == 0)
+      display_available_rooms();
+   else if (choice == 1)
+      gui_room_command(JOIN_ROOM);
+   else if (choice == 2)
+      gui_room_command(CREATE_ROOM);
+   else if (choice == 3)
+      gui_room_command(EXIT_ROOM);
+   // else if (choice == 4)
+   //    send_message();
+   else if (choice == 5)
+      display_private_messages();
+   else if (choice == 6)
+      display_room_chat();
+   else if (choice == 7)
+      display_clients_in_rooms();
+   else if (choice == 8)
+      gui_room_command(DISPLAY_RECENT_MESSAGES);
+   else if (choice == 9)
+      clean(0);
+
+   // getchar();
+   // char ch = fgetc(stdin);
+   // while (ch != 0x0A)
+   //    ch = fgetc(stdin);
+}
 int main(int argc, char *argv[])
 {
-   //----------------- join server -------------------------
+   setbuf(stdout, NULL);
+   printf("server name: ");
+   fflush(stdout);
+   scanf("%s", server_name);
+   printf("\nclient name: ");
+   fflush(stdout);
+   scanf("%s", client_name);
 
+   signal(SIGINT, clean);
+   ftok_init(client_name);
+
+   server_queue = msgget(get_id_from_string(server_name), 0777);
+   client_queue = msgget(get_id_from_string(client_name), 0777 | IPC_CREAT);
+
+   //----------------- join server -------------------------
    int joined = 0;
    while (joined == 0)
-      joined = join_server(server_queue, client_queue);
+      joined = join_server();
 
    // //wait for ENTER
    // getchar();
@@ -282,78 +251,46 @@ int main(int argc, char *argv[])
 
    //------------ join to the room ---------------------
 
-   joined = 0;
-   int choice;
+   int choice = 0;
+   printf("\nJoin existing room          1");
+   printf("\nCreate and join a new room  2\n");
+   scanf("%d", &choice);
 
-   while (joined == 0)
-   {
-      printf("\nDisplay available rooms   1");
-      printf("\nJoin existing room        2");
-      printf("\nCreate the room           3\n");
-      scanf("%d", &choice);
+   if (choice == 1){
+      display_available_rooms();
+      gui_room_command(JOIN_ROOM);
+   }else if (choice == 2)
+      gui_room_command(CREATE_ROOM);
 
-      if (choice == 1)
-         display_available_rooms(server_queue, client_queue);
-      else if (choice == 2)
-         joined = join_room(server_queue, client_queue);
-      else if (choice == 3)
-         create_room(server_queue, client_queue);
+   getchar();
+   // char ch = fgetc(stdin);
+   // while (ch != 0x0A)
+   //    ch = fgetc(stdin);
 
-      getchar();
-      char ch = fgetc(stdin);
-      while (ch != 0x0A)
-         ch = fgetc(stdin);
-
-      system("clear");
-      printf("------  %s  ------\n\n", client_name);
-   }
-
+   system("clear");
+   printf("------  %s  ------\n\n", client_name);
+   printf("type your message or /menu to display menu\n");
    //------------------ main loop -----------------------
-   while (1)
-   {
-      printf("\nDisplay available rooms      0");
-      printf("\nJoin existing room           1");
-      printf("\nCreate the room              2");
-      printf("\nWithdraw from room           3");
-      printf("\nSend message                 4");
-      printf("\nDisplay private messages     5");
-      printf("\nDisplay room chat            6");
-      printf("\nDisplay clients in server    7");
-      printf("\nDisplay clients in rooms     8");
-      printf("\nExit                         9\n");
-      scanf("%d", &choice);
-
-      if (choice == 0){
-         display_available_rooms(server_queue, client_queue);
-      }else if (choice == 1)
-         join_room(server_queue, client_queue);
-      else if (choice == 2)
-         create_room(server_queue, client_queue);
-      else if (choice == 3)
-         printf("Witdraw from room\n");
-      else if (choice == 4)
-         send_message(server_queue, client_queue);
-      else if (choice == 5)
-         display_private_messages(client_queue);
-      else if (choice == 6)
-         display_room_chat(client_queue);
-      else if (choice == 7)
-         printf("Displat clients in server\n");
-      else if (choice == 8)
-         display_clients_in_rooms(server_queue, client_queue);
-      else if (choice == 9)
+   if (fork() == 0)
+      while (1)
       {
-         msgctl(client_queue, IPC_RMID, NULL);
-         msgctl(server_queue, IPC_RMID, NULL);
-         exit(0);
+         display_room_chat();
+         display_private_messages();
+         sleep(1);
       }
-
-      getchar();
-      char ch = fgetc(stdin);
-      while (ch != 0x0A)
-         ch = fgetc(stdin);
-
-      system("clear");
-      printf("------  %s  ------\n\n", client_name);
-   }
+   else
+      while (1)
+      {
+         printf("\n> ");
+         fflush(stdout);
+         char* message;
+         size_t size = 1024;
+         message = (char *)malloc(size * sizeof(char));
+         getline(&message, &size, stdin);
+         if(strstr(message, "/menu") != NULL)
+            menu();
+         // else if (message[strspn(message, " \t\v\r\n")] == '\0')  // checks for empty line
+         //    send_message(message);
+         getchar();
+      }
 }
