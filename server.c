@@ -9,11 +9,11 @@ msbuf recent_room_messages[10][10];
 
 void clean(int n)
 {
-    msgctl(server_queue, IPC_RMID, NULL);
+   msgctl(server_queue, IPC_RMID, NULL);
    char cmd[1024] = "rm -rf ";
    strcat(cmd, TEMP_DIR);
    system(cmd);
-    exit(1);
+   exit(1);
 }
 
 int check_room(char client1[], char client2[])
@@ -42,13 +42,13 @@ void join_client(msbuf getMsg)
       {
          // name duplicate checking is disabled for now
 
-         // //send error - such name already exists
-         // printf("such user already exists\n");
-         // msbuf sendMsg;
-         // strcpy(sendMsg.client, getMsg.client);
-         // sendMsg.type = USER_EXISTS;
+         //send error - such name already exists
+         printf("such user already exists\n");
+         msbuf sendMsg;
+         strcpy(sendMsg.client, getMsg.client);
+         sendMsg.type = USER_EXISTS;
 
-         // msgsnd(get_client_queue(getMsg.client), &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+         msgsnd(get_client_queue(getMsg.client), &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
          break;
       }
       else if (index == 4)
@@ -78,7 +78,8 @@ void join_room(msbuf getMsg)
       if (strcmp(getMsg.option, rooms_names[index]) == 0)
       {
          for (int j = 0; j < 5; j++)
-            if (strcmp(rooms_client_names[index][j], getMsg.client) == 0){
+            if (strcmp(rooms_client_names[index][j], getMsg.client) == 0)
+            {
                //user already in room
                printf("user already in room\n");
                msbuf sendMsg;
@@ -101,7 +102,6 @@ void join_room(msbuf getMsg)
                msgsnd(get_client_queue(getMsg.client), &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
                return;
             }
-         
       }
       else if (index == 9)
       {
@@ -122,7 +122,8 @@ void exit_room(msbuf getMsg)
       if (strcmp(getMsg.option, rooms_names[index]) == 0)
       {
          for (int j = 0; j < 5; j++)
-            if (strcmp(rooms_client_names[index][j], getMsg.client) == 0){
+            if (strcmp(rooms_client_names[index][j], getMsg.client) == 0)
+            {
                printf("removing %s from %s\n", getMsg.client, rooms_names[index]);
                strcpy(rooms_client_names[index][j], "");
                rooms_client_queues[index][j] = 0;
@@ -233,9 +234,25 @@ void dispatch_room_message(msbuf getMsg)
    for (int index = 0; index < 10; index++)
       if (strcmp(getMsg.option, rooms_names[index]) == 0)
       {
-         if(recent_room_messages_index[index] == 10)
+         int flag = 0;
+         for (int i = 0; i < 5; i++)
+            if (strcmp(rooms_client_names[index][i], getMsg.client) == 0)
+               flag = 1;
+         if (!flag)
+         {
+            printf("user doesnt belong to room\n");
+            msbuf sendMsg;
+            sendMsg.type = USER_NOT_IN_ROOM;
+            msgsnd(get_client_queue(getMsg.client), &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+            return;
+         }
+
+         if (recent_room_messages_index[index] == 10)
             recent_room_messages_index[index] = 0;
-         recent_room_messages[index][recent_room_messages_index[index]++] = getMsg;
+         
+         recent_room_messages[index][recent_room_messages_index[index]] = getMsg;
+         recent_room_messages[index][recent_room_messages_index[index]].type = CACHED_MESSAGE_FROM_ROOM;
+         recent_room_messages_index[index]++;
          for (int j = 0; j < 5; j++)
             if (strcmp(rooms_client_names[index][j], ""))
             {
@@ -267,15 +284,18 @@ void dispatch_room_message(msbuf getMsg)
    }
 }
 
-void get_clients_in_rooms(msbuf getMsg){
+void get_clients_in_rooms(msbuf getMsg)
+{
    char out[1024] = "";
-   for(int i = 0; i < 10; i++)
-      if(strcmp(rooms_names[i], "") != 0){
+   for (int i = 0; i < 10; i++)
+      if (strcmp(rooms_names[i], "") != 0)
+      {
          strcat(out, "* ");
          strcat(out, rooms_names[i]);
          strcat(out, "\n");
-         for(int j = 0; j<5;j++)
-            if(strcmp(rooms_client_names[i][j], "") != 0){
+         for (int j = 0; j < 5; j++)
+            if (strcmp(rooms_client_names[i][j], "") != 0)
+            {
                strcat(out, "  - ");
                strcat(out, rooms_client_names[i][j]);
                strcat(out, "\n");
@@ -285,7 +305,6 @@ void get_clients_in_rooms(msbuf getMsg){
    sendMsg.type = CLIENTS_IN_ROOMS;
    strcpy(sendMsg.message, out);
    msgsnd(get_client_queue(getMsg.client), &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-   
 }
 
 void get_available_rooms(msbuf getMsg)
@@ -307,12 +326,14 @@ void get_available_rooms(msbuf getMsg)
    msgsnd(get_client_queue(getMsg.client), &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
 }
 
-void display_recent_messages(msbuf getMsg){
+void display_recent_messages(msbuf getMsg)
+{
    for (int index = 0; index < 10; index++)
       if (strcmp(getMsg.option, rooms_names[index]) == 0)
       {
          for (int j = 0; j < 5; j++)
-            if (strcmp(rooms_client_names[index][j], getMsg.client) == 0){
+            if (strcmp(rooms_client_names[index][j], getMsg.client) == 0)
+            {
                printf("sending recent messages from [%s] to %s\n", rooms_names[index], getMsg.client);
 
                msbuf sendMsg;
@@ -320,14 +341,18 @@ void display_recent_messages(msbuf getMsg){
                sendMsg.type = OK;
                msgsnd(get_client_queue(getMsg.client), &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
 
-               for(int i = recent_room_messages_index[index]; i < 10; i++)
-                  if(recent_room_messages[index][i].type == MESSAGE_FROM_ROOM)
-                     msgsnd(get_client_queue(getMsg.client), &recent_room_messages[index][i], sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-               
-               for(int i = 0; i < recent_room_messages_index[index]; i++)
-                  if(recent_room_messages[index][i].type == MESSAGE_FROM_ROOM)
-                     msgsnd(get_client_queue(getMsg.client), &recent_room_messages[index][i], sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
-               
+               for (int i = recent_room_messages_index[index]; i < 10; i++)
+               {
+                  printf("msgtype:%ld\n", recent_room_messages[index][i].type);
+                  if (recent_room_messages[index][i].type == CACHED_MESSAGE_FROM_ROOM)
+                     msgsnd(get_client_queue(getMsg.client), &(recent_room_messages[index][i]), sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+               }
+               for (int i = 0; i < recent_room_messages_index[index]; i++)
+               {
+                  printf("msgtype:%ld\n", recent_room_messages[index][i].type);
+                  if (recent_room_messages[index][i].type == CACHED_MESSAGE_FROM_ROOM)
+                     msgsnd(get_client_queue(getMsg.client), &(recent_room_messages[index][i]), sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
+               }
                return;
             }
 
@@ -350,7 +375,6 @@ void display_recent_messages(msbuf getMsg){
          msgsnd(get_client_queue(getMsg.client), &sendMsg, sizeof(msbuf) - sizeof(long), IPC_NOWAIT);
          break;
       }
-
 }
 void handle_message(msbuf getMsg)
 {
@@ -407,7 +431,8 @@ void handle_message(msbuf getMsg)
 
 int main(int argc, char *argv[])
 {
-   for(int i = 0; i < 10; i++){
+   for (int i = 0; i < 10; i++)
+   {
       recent_room_messages_index[i] = 0;
    }
 

@@ -22,6 +22,7 @@
 // types of messages
 #define MESSAGE_FROM_CLIENT 20
 #define MESSAGE_FROM_ROOM 21
+#define CACHED_MESSAGE_FROM_ROOM 22
 
 // display a nice oof and exit
 #define OOF { printf("\n\n▒██████╗▒   ▒██████╗▒   ███████╗\n██╔═══██╗   ██╔═══██╗   ██╔════╝\n██║▒▒▒██║   ██║▒▒▒██║   █████╗▒▒\n██║▒▒▒██║   ██║▒▒▒██║   ██╔══╝▒▒\n╚██████╔╝   ╚██████╔╝   ██║▒▒▒▒▒\n▒╚═════╝▒   ▒╚═════╝▒   ╚═╝▒▒▒▒▒   ...we have a problem here\n\n"); \
