@@ -3,8 +3,6 @@ CFLAGS  = -g
 
 default: client server
 
-# count:  countwords.o counter.o scanner.o 
-# 	$(CC) $(CFLAGS) -o count countwords.o counter.o scanner.o
 client:  client.o common.o
 	$(CC) $(CFLAGS) -o client client.o common.o
 server:  server.o common.o
