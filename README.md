@@ -1,40 +1,53 @@
-## chat app in C  ¯\\\_(ツ)_/¯
+# chat app in C  ¯\\\_(ツ)_/¯
 
-App which allows to communicate between different users via server. The idea is that one server handles all requests coming from clients allowing them to send messages directly to another client or to the rooms. Creating and joining room is available from level of client. There is one server and each joining client has to provide correct name of it in order to join. Then each client has to send own name (unique one).
+App which allows users to communicate through a central server. The server handles all requests coming from clients, allowing them to send messages directly to one another or to a public chat room. Clients can view, create and join rooms, view (limited) chat history and see other connected users.
 
-### instruction of usage 
+## Installation
 
-to clean all old message queues and compile files run in terminal:
+To download and compile both `server` and `client` apps, run the following commands:
 
-```makefile
-make clean && make
+```bash
+git clone https://github.com/Stanislaw09/chat-app-c.git
+cd ./chat-app-c
+make
 ```
-run server:
+
+## Usage
+First, run the server app:
 
 ```bash
 ./server
 ```
 
-run client (each client in different terminal):
+Then, run clients (each client in a different terminal):
 
 ```bash
 ./client
 ```
+## Troubleshooting
+If you experience an unexpected error after force-stopping `server` or `client`, please run:
+```bash
+make clean && make
+```
 
-### description of used files
 
-#### server
+## Files in this repository
 
-main file which handles all request from clients and then executes proper functions to enable communication. It also stores and manages all the required structures. 
+### `server.c`
 
-#### client
+Handles all requests from clients and then executes proper functions to enable communication. It also stores and manages all the required structures. 
 
-file can be run multiple time to create different clients. It gives the user ability to interact via options in menu with different clients connected to server. The main functionality is to send and receive messages but it also allows to create / join / leave the room, displaying last 10 messages in room or display all users in rooms stored in server. Taking input from user and receiving messages in asynchronous - client creates two processes. 
+### `client.c`
 
-#### common
+Can be run multiple time to create different clients. It gives the user ability to interact via options in menu with different clients connected to server. The main functionality is to send and receive messages but it also allows to create / join / leave a chat room, display the last 10 messages in a room or display all users in all rooms stored in server. Taking input from user and receiving messages in asynchronous - client creates two processes. 
 
-includes some functions which run during initialization and structure of messages
+### `common.h, common.c`
 
-#### const
+Contains functions and structures used both by server and client
 
-keeps constants, mainly types of messages which are send on line client-server
+### `const.h`
+
+Stores shared constants
+
+### [protocol.md](./protocol.md)
+A technical description
